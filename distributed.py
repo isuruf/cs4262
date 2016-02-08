@@ -10,6 +10,7 @@ from bootstrap_server import BootstrapServerConnection
 import threading
 from uuid import uuid1
 from collections import deque
+import time
 
 try:
     import thread
@@ -25,6 +26,8 @@ def send_search(users, filename, me):
         me (Node)         		 : Search initiater Node
     '''
     uuid = str(uuid1())
+    print("Search query %s sent at %s" % (filename, int(time.time() * 1000)))
+    
     for user in users:
         with DistributedClient(user) as c:
             c.search(filename, me, 3, uuid)
@@ -163,13 +166,13 @@ class DistributedServer:
     # rpc method
     def found_file(self, files, node, uuid):
 		'''
-		
+		Display node with searched file and time taken to complete search
 		Args:
 			files(list(str))	: Matching set of files 
 			node(Node)			: Node which has the file
 			uuid(str)			: uuid for the message
 		'''
-        print("Found files %s from %s" % (files, node))
+        print("Found files %s at %s from %s" % (files, int(time.time() * 1000), node))
 
     # rpc method
     def search(self, filename, requester, hops, uuid):
