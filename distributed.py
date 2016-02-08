@@ -20,19 +20,19 @@ def send_search(users, filename, me):
     '''
     Send a search query to list of users
     Args:
-        users       : list of users to send the search query
-        filename        : file name to search for
-        me          : IP address and port number of search initiater
+        users (list(Node))       : list of users to send the search query
+        filename (str)   		 : file name to search for
+        me (Node)         		 : Search initiater Node
     '''
-    #try:
     uuid = str(uuid1())
     for user in users:
         with DistributedClient(user) as c:
             c.search(filename, me, 3, uuid)
-    #except:
-    #    pass
 
 class DistributedClient:
+	'''
+	Wrapper for RPC Client
+	'''
     def __init__(self, user):
         self.user = user
         self.connected = None
@@ -62,6 +62,11 @@ class DistributedClient:
         self.transport.close()
 
     def join(self, me):
+		'''
+		Join node to the system
+		Args:
+			me(Node)	: Node to be connected
+		'''
         try:
             print("Sending join request to %s " % self.user)
             self.client.join(me)
@@ -69,20 +74,40 @@ class DistributedClient:
             pass#print(('Joining %s:%s failed with exception %s' % (self.user.port, self.user.ip, tx.message)))
 
     def leave(self, me):
+		'''
+		Remove node from the system
+		Args:
+			me(Node)	: Node to be removed
+		'''
         try:
             self.client.leave(me)
         except:
             pass#print(('Leaving %s:%s failed with exception %s' % (self.user.port, self.user.ip, tx.message)))
 
-    def search(self, filename, requestor, hops, uuid):
+    def search(self, filename, requester, hops, uuid):
+		'''
+		Search file 
+		Args:
+			filename(str)	: File name to search for
+			requester(Node)	: Search requester node
+			hops(int)		: Maximum number of hops
+			uuid(str)		: uuid for the message
+		'''
         try:
-            self.client.search(filename, requestor, hops, uuid)
+            self.client.search(filename, requester, hops, uuid)
         except Thrift.TException as tx:
             pass#print(('Sending filename(%s) search to %s:%s failed with exception %s' % (filename, self.user.port, self.user.ip, tx.message)))
 
-    def found_file(self, files, requestor, uuid):
+    def found_file(self, files, requester, uuid):
+		'''
+		Search file 
+		Args:
+			files(list(str)): Matching set of files 
+			requester(Node)	: Search requester node
+			uuid(str)		: uuid for the message
+		'''
         try:
-            self.client.found_file(files, requestor, uuid)
+            self.client.found_file(files, requester, uuid)
         except Thrift.TException as tx:
             pass#print(('Sending files(%s) found to %s:%s failed with exception %s' % (files, self.user.port, self.user.ip, tx.message)))
 
@@ -103,6 +128,14 @@ class DistributedServer:
 
     # rpc method
     def join(self, other):
+		'''
+		Join with distributed system using RPC
+		Args:
+			other(Node)		: Connecting node
+		Returns:
+			0   			: If node joined successfully
+			9999   			: If node is already in the user list
+		'''
         print("Received join request from %s" % other)
         if other in self.users:
             return 9999
@@ -113,6 +146,14 @@ class DistributedServer:
 
     # rpc method
     def leave(self, other):
+		'''
+		Leave distributed system using RPC
+		Args:
+			other(Node)		: Leaving node
+		Returns:
+			0   			: If node removed successfully
+			9999   			: If node is not in the user list
+		'''
         if other in self.users:
             self.users.remove(other)
             return 0
@@ -121,18 +162,33 @@ class DistributedServer:
 
     # rpc method
     def found_file(self, files, node, uuid):
+		'''
+		
+		Args:
+			files(list(str))	: Matching set of files 
+			node(Node)			: Node which has the file
+			uuid(str)			: uuid for the message
+		'''
         print("Found files %s from %s" % (files, node))
 
     # rpc method
-    def search(self, filename, requestor, hops, uuid):
+    def search(self, filename, requester, hops, uuid):
+		'''
+		Search files within distributed system using RPC
+		Args:
+			filename(str)		: File name to search for
+			requester(Node)		: Search requester node
+			hops(int)			: Maximum number of hops
+			uuid(str)			: uuid for the message
+		'''
         if uuid in self.received_searches:  
             print("Duplicate search request %s" % uuid)
             return
         self.received_searches.append(uuid)
         #print("messages %s" % self.received_searches)
-        print("Received search request %s from %s for filename %s" % (uuid, requestor, filename))
-        if requestor != self.me and requestor not in self.users:
-            self.users.append(requestor)
+        print("Received search request %s from %s for filename %s" % (uuid, requester, filename))
+        if requester != self.me and requester not in self.users:
+            self.users.append(requester)
             print("Routing table size %s. Entries %s" % (len(self.users), self.users))
         l = []
         filename = " %s " % filename.strip().lower()
@@ -140,21 +196,37 @@ class DistributedServer:
             if filename in (" %s "%f.lower()):
                 l.append(f)
         if len(l) != 0:
-            threading.Thread(target=self.send_found, args=(l, requestor, uuid)).start()
+            threading.Thread(target=self.send_found, args=(l, requester, uuid)).start()
         elif hops > 1:
-            threading.Thread(target=self.forward_request, args=(filename, requestor, hops-1, uuid)).start()
+            threading.Thread(target=self.forward_request, args=(filename, requester, hops-1, uuid)).start()
 
-    def forward_request(self, filename, requestor, hops, uuid):
+    def forward_request(self, filename, requester, hops, uuid):
+		'''
+		Forward search request
+		Args:
+			filename(str)		: File name to search for
+			requester(Node)		: Search requester node
+			hops(int)			: Maximum number of hops
+			uuid(str)			: uuid for the message
+		'''
         print("Forwarding request to %s" % self.users)
         for user in self.users:
-            if user == requestor:
+            if user == requester:
                 continue
             with DistributedClient(user) as c:
-                c.search(filename, requestor, hops, uuid)
+                c.search(filename, requester, hops, uuid)
 
-    def send_found(self, files, requestor, uuid):
-        print("Sending file %s found to %s" % (files, requestor))
-        with DistributedClient(requestor) as c:
+    def send_found(self, files, requester, uuid):
+		'''
+		Send file to the destination
+		Args:
+			files(list(str))	: Matching set of files 
+			requester(Node)		: Search requester node
+			hops(int)			: Maximum number of hops
+			uuid(str)			: uuid for the message
+		'''
+        print("Sending file %s found to %s" % (files, requester))
+        with DistributedClient(requester) as c:
             c.found_file(files, self.me, uuid)
 
     def __enter__(self):
